@@ -33,9 +33,14 @@ class Tokenizer(object):
         :param punkt_params: Path to Punkt parameters.
         :param spm_params: Path to sentence piece model parameters.
         """
-        with open(punkt_params, 'rb') as f:
-            punkt_params = pickle.load(f)
-            self.sentence_tokenizer = PunktSentenceTokenizer(punkt_params)
+        if punkt_params.endswith('.xz'):
+            f = lzma.open(punkt_params, 'rb')
+        else:
+            f = open(punkt_params, 'rb')
+
+        punkt_params = pickle.load(f)
+        self.sentence_tokenizer = PunktSentenceTokenizer(punkt_params)
+        f.close()
 
         self.spm_tokenizer = sentencepiece.SentencePieceProcessor()
         self.spm_tokenizer.Load(spm_params)
