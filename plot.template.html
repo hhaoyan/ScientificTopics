@@ -1,0 +1,178 @@
+<head>
+    <title>Topic interactive browser</title>
+    <script src="https://cdn.plot.ly/plotly-1.2.0.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.4.1.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/1.0.10/pako_inflate.min.js"></script>
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" rel="stylesheet"
+          integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <style>
+        #tokens {
+
+        }
+
+        .badge {
+            margin: 2px;
+            font-size: 12px;
+        }
+
+        .badge {
+            transition: background-color 0.1s ease;
+        }
+
+        .topwords {
+            margin: 3px;
+            color: white;
+            padding-left: 5px;
+            padding-right: 5px;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+
+    <div class="row">
+        <div class="col-lg-12">
+            <div id="topic_counter" style="width:100%;height:300px;"></div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-12">
+            <p id="it">Hover mouse over the plot to see topics for each word.</p>
+            <p id="tokens"></p>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-12" id="topwords">
+        </div>
+    </div>
+
+</div>
+
+<script>
+    let tokens_paragraph = $('#tokens');
+    let plotter = document.getElementById('topic_counter');
+    let json_base64 = pako.inflate(atob('{{data_base64}}'), {to: 'string'});
+
+    let data = $.parseJSON(json_base64);
+    let token_mapper = {};
+
+    data['top_words'].forEach(function (top_words, topic_id) {
+        let words = 'Topic ' + topic_id + ': ' + top_words.join(', ');
+        let p_display = $('<p class="topwords" style="display: none;" id="topic_' + topic_id + '">' + words + '</p>');
+        $('#topwords').append(p_display);
+    });
+
+    data['tokens'].forEach(function (args) {
+        let not_stop = args[0];
+        let token = args[1];
+        let span_cls;
+        if (not_stop) {
+            span_cls = 'badge-secondary'
+        } else {
+            span_cls = 'badge-dark'
+        }
+        let token_el = $('<span class="badge ' + span_cls + '">' + token + '&nbsp;</span>&nbsp;');
+
+        tokens_paragraph.append(token_el);
+        if (not_stop) {
+            token_mapper[Object.keys(token_mapper).length] = token_el;
+        }
+    });
+
+    let n_topics = data['n_tw'][0].length;
+    let n_tokens = data['states'][0].length;
+    let n_iterations = data['states'].length;
+
+    let iterations = [];
+    let data_n_tw = {};
+    for (let i = 0; i < n_topics; i++)
+        data_n_tw[i] = [];
+
+    data['n_tw'].forEach(function (topics, it) {
+        iterations.push(it);
+
+        for (let i = 0; i < n_topics; i++) {
+            data_n_tw[i].push(topics[i]);
+        }
+    });
+
+    for (let t in Object.keys(data_n_tw)) {
+        let average_tokens = data_n_tw[t].reduce((a, b) => a + b, 0) * 1. / n_iterations;
+        if (average_tokens < n_tokens * 0.05) {
+            delete data_n_tw[t];
+        }
+    }
+
+    let plots = [];
+
+    for (let t in data_n_tw) {
+        plots.push({
+            x: iterations,
+            y: data_n_tw[t],
+            name: 'Topic ' + t,
+            topic_id: t,
+        })
+    }
+
+    let layout = {
+        title: 'MCMC (Markov chain Monte Carlo) simulation of topics for words',
+        xaxis: {
+            title: 'Iterations'
+        },
+        yaxis: {
+            title: 'Number of words'
+        },
+        showlegend: true,
+    };
+
+    console.log('Plotting ' + plots.length + ' plots:', plots);
+
+    let line_colors = {};
+
+    Plotly.plot(plotter, plots, layout).then(function (plot) {
+        plot.on('plotly_hover', function (hover_data) {
+            if (Object.keys(line_colors).length < hover_data.points.length) {
+                hover_data.points.forEach(function (point) {
+                    let topic_id = point.data.topic_id;
+                    line_colors[topic_id] = point.fullData.line.color;
+                })
+            }
+
+            let it = hover_data.points[0].x;
+            $('#it').text('Currently showing word topics for iteration ' + it + '.');
+            let topics = data['states'][it];
+
+            let display_topics = [];
+
+            for (let i = 0; i < n_tokens; i++) {
+                let topic = topics[i];
+                let span = token_mapper[i];
+
+                if (topic in line_colors) {
+                    display_topics.push(topic);
+                    span.css('background-color', line_colors[topic]);
+                } else {
+                    span.css('background-color', '');
+                }
+            }
+
+            display_topics.forEach(function (topic) {
+                $('#topic_' + topic).stop().css('background-color', line_colors[topic]).show(200);
+            })
+        }).on('plotly_unhover', function (unhover_data) {
+            $('#it').text('Hover mouse over the plot to see topics for each word.');
+
+            for (let i = 0; i < n_tokens; i++) {
+                let span = token_mapper[i];
+                span.css('background-color', '');
+            }
+
+            for (let i = 0; i < n_topics; i++) {
+                $('#topic_' + i).stop().hide(200).css('background-color');
+            }
+        });
+    })
+</script>
+</body>

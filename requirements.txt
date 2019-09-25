@@ -1,0 +1,10 @@
+Cython
+gensim
+matplotlib
+nltk
+numpy
+sentencepiece
+six
+sklearn
+tensorflow
+tqdm
