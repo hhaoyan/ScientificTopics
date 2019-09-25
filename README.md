@@ -43,7 +43,7 @@ to the model files:
 ```
 data_20190830/model_100000.model ## sentencepiece model with 100k vocabulary 
 data_20190830/model_100000.vocab
-data_20190830/punkt.params  ## Parameters to the Punkt sentence segmenter.
+data_20190830/punkt.params.xz  ## Parameters to the Punkt sentence segmenter.
 data_20190830/lda_run2/topic_500/server_*_table_*.model  ## Model parameters for 500 topics
 data_20190830/lda_run2/topic_1000/server_*_table_*.model  ## Model parameters for 1000 topics
 ```
@@ -56,7 +56,7 @@ python lda_tools.py infer \
     --lda-result-dir data_20190830/lda_run2/topic_1000 \
     --input input.txt \
     --output output.txt \
-    --params data_20190830/punkt.params \
+    --params data_20190830/punkt.params.xz \
     --spm data_20190830/model_100000.model \
     --num-vocabs 100000 \
     --stopwords stopwords.txt \
