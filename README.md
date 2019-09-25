@@ -81,8 +81,21 @@ If you find this work useful for your projects, please consider citing:
   year={2019},
   publisher={Nature Publishing Group}
 }
-``` 
+```
+
+Note that this repo is implemented differently as described in the paper. 
+Specifically, we have updated to use Punkt, sentencepiece, LightLDA to handle
+much more large datasets. 
 
 ## Questions
 
 Please file a issue if you have any questions.
+
+## References
+
+Here are additional refs that you can read to understand how this repo is implemented:
+
+1. Blei, David M., Andrew Y. Ng, and Michael I. Jordan. "Latent dirichlet allocation." Journal of machine Learning research 3.Jan (2003): 993-1022.
+2. Kiss, Tibor, and Jan Strunk. "Unsupervised multilingual sentence boundary detection." Computational Linguistics 32.4 (2006): 485-525.
+3. Kudo, Taku, and John Richardson. "Sentencepiece: A simple and language independent subword tokenizer and detokenizer for neural text processing." arXiv preprint arXiv:1808.06226 (2018).
+4. Yuan, Jinhui, et al. "Lightlda: Big topic models on modest computer clusters." Proceedings of the 24th International Conference on World Wide Web. International World Wide Web Conferences Steering Committee, 2015.
