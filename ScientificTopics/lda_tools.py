@@ -5,22 +5,27 @@ import logging
 import os
 import re
 import subprocess
+import warnings
 import zlib
 from collections import Counter
 from functools import lru_cache
 from math import ceil
 
-import matplotlib.pyplot as plt
+try:
+    import matplotlib.pyplot as plt
+except ImportError:
+    warnings.warn("Unable to find matplotlib, plotting is disabled")
+    plt = None
 import numpy
 import pyximport
 import sentencepiece
 
-from sentence_segmentation import Tokenizer
+from ScientificTopics.sentence_segmentation import Tokenizer
 
 
-_, pyximporter = pyximport.install(
+pyximport.install(
     setup_args={'include_dirs': numpy.get_include()})
-lda_infer = pyximporter.find_module('lda_infer').load_module('lda_infer')
+from ScientificTopics import lda_infer
 
 
 class LDAInfer(object):

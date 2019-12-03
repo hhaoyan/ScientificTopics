@@ -1,6 +1,6 @@
 # This is a change of the Punkt sentence tokenizer in nltk.
 # This file is implemented to minimize memory fingerprint so to handle
-# huge input files.
+# huge input files (~hundreds of GBs).
 # Author: Haoyan Huo
 # Date: July 24, 2019
 #

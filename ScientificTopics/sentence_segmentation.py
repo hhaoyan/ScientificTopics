@@ -8,7 +8,7 @@ from collections import Counter
 
 from tqdm import tqdm
 import sentencepiece
-from efficient_punkt import PunktSentenceTokenizer, PunktTrainer, PunktLanguageVars
+from ScientificTopics.efficient_punkt import PunktSentenceTokenizer, PunktTrainer, PunktLanguageVars
 from synthesis_project_ceder.database import SynPro
 
 
