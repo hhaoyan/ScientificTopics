@@ -18,7 +18,6 @@ except ImportError:
     plt = None
 import numpy
 import pyximport
-import sentencepiece
 
 from ScientificTopics.sentence_segmentation import Tokenizer
 
@@ -30,7 +29,8 @@ from ScientificTopics import lda_infer
 
 class LDAInfer(object):
     def __init__(self, lda_result_dir,
-                 beta=0.01, alpha=0.1, num_vocab=None, spm_model=None):
+                 punkt_model, stopwords, spm_model,
+                 beta=0.01, alpha=0.1, num_vocab=None):
         self.lda_result_dir = lda_result_dir
         self.beta = beta
         self.alpha = alpha
@@ -40,13 +40,11 @@ class LDAInfer(object):
         if self.num_vocab is not None:
             self._betasum = self.beta * self.num_vocab
 
-        if isinstance(spm_model, sentencepiece.SentencePieceProcessor):
-            self.spm_tokenizer = spm_model
-        elif spm_model is not None:
-            self.spm_tokenizer = sentencepiece.SentencePieceProcessor()
-            self.spm_tokenizer.Load(spm_model)
-        else:
-            self.spm_tokenizer = None
+        self.tokenizer = Tokenizer(punkt_model, spm_model)
+        self.spm_tokenizer = self.tokenizer.spm_tokenizer
+        with open(stopwords, encoding='utf8') as f:
+            self.stopwords = [x.strip().split()[0] for x in f if x.strip()]
+        self.stopwords = set(self.spm_tokenizer.PieceToId(x) for x in self.stopwords)
 
         self.n_t, self.n_tw = self._read_model_parameters()
 
@@ -85,6 +83,37 @@ class LDAInfer(object):
         take_random_topics = numpy.where(numpy.logical_not(cond))
         proposal[take_random_topics] = numpy.random.choice(self.ntopics, size=len(take_random_topics[0]))
         return proposal
+
+    def tokenize_sentences(self, text, filter_stopwords=True):
+        """
+        Tokenize words in a paragraph, and return a list of lists, each list representing
+        a sentence. All words are converted to id in vocabulary.
+
+        :param text: Paragraph to tokenize
+        :param filter_stopwords: Switch to filter out all stopwords
+        :return: a list of lists of token ids.
+        """
+        token_ids_all = self.tokenizer.tokenize_ids(text)
+        valid_tokens = []
+        for sentence in token_ids_all:
+            sentence = [x for x in sentence if x not in self.stopwords and filter_stopwords]
+            valid_tokens.append(sentence)
+        return valid_tokens
+
+    def tokenize_paragraph(self, text, filter_stopwords=True):
+        """
+        Tokenize words in a paragraph, and return a list of token ids.
+        See also @tokenize_sentences()
+
+        :param text: Paragraph to tokenize
+        :param filter_stopwords: Switch to filter out all stopwords
+        :return: a list of token ids.
+        """
+        token_ids_all = self.tokenize_sentences(text, filter_stopwords)
+        # Collect
+        token_ids_all = sum(token_ids_all, [])
+
+        return token_ids_all
 
     def infer_topic_fast(self, doc, iterations=1000, mh_steps=2, plot_mc_states=False):
         doc_topics, monte_carlo_states, doc_topics_states = lda_infer.infer_topic(
@@ -368,21 +397,12 @@ def infer(input_dir,
           infer_input, infer_output,
           params, spm_model, stopwords,
           alpha, beta, num_vocab, generate_html):
-    logging.info('Loading tokenizer (punkt system and sentencepiece)...')
-    tokenizer = Tokenizer(params, spm_model)
-    logging.info('Loading LDA result...')
-    inferer = LDAInfer(input_dir, spm_model=tokenizer.spm_tokenizer,
+    logging.info('Loading model...')
+    inferer = LDAInfer(input_dir, punkt_model=params, spm_model=spm_model, stopwords=stopwords,
                        beta=beta, alpha=alpha, num_vocab=num_vocab)
 
     top_words = [x[1] for x in sorted(inferer.get_top_words().items(), key=lambda x: x[0])]
     # inferer.find_possible_stopwords()
-
-    if stopwords is None:
-        stopwords = set()
-    else:
-        with open(stopwords, encoding='utf8') as f:
-            stopwords = [x.strip().split()[0] for x in f if x.strip()]
-        stopwords = set(inferer.spm_tokenizer.PieceToId(x) for x in stopwords)
 
     with open(infer_input, encoding='utf8') as input_file, open(infer_output, 'w') as output_file:
         logging.info('Starting to infer topics on new documents.')
@@ -392,9 +412,9 @@ def infer(input_dir,
                 continue
 
             logging.info('Tokenizing paragraph.')
-            token_ids_all = tokenizer.tokenize_ids(line)
+            token_ids_all = inferer.tokenizer.tokenize_ids(line)
             token_ids_all = sum(token_ids_all, [])
-            token_ids_all = [(x not in stopwords, x) for x in token_ids_all]
+            token_ids_all = [(x not in inferer.stopwords, x) for x in token_ids_all]
 
             token_ids = [x for not_stop, x in token_ids_all if not_stop]
 
@@ -409,7 +429,7 @@ def infer(input_dir,
                         'top_words': top_words,
                         'states': mc_states.tolist(),
                         'n_tw': n_tw_states.tolist(),
-                        'tokens': [(not_stop, tokenizer.spm_tokenizer.IdToPiece(x)) for not_stop, x in token_ids_all]
+                        'tokens': [(not_stop, inferer.spm_tokenizer.IdToPiece(x)) for not_stop, x in token_ids_all]
                     }).encode())).decode()
                     f.write(html_template.replace('{{data_base64}}', data_base64))
 
@@ -457,7 +477,7 @@ def main():
                                  help='Punkt parameters')
     infer_arguments.add_argument('--spm', action='store', type=str, required=True,
                                  help='SPM model file')
-    infer_arguments.add_argument('--stopwords', action='store', type=str, default=None,
+    infer_arguments.add_argument('--stopwords', action='store', type=str, required=True,
                                  help='List of stopwords')
     infer_arguments.add_argument('--num-vocabs', action='store', type=int, required=True,
                                  help='Number of vocabulary')

@@ -74,9 +74,14 @@ data_files:
     file_fn: "topic_1000/server_7_table_1.model"
 punkt_data_fn: "punkt.params.xz"
 sentencepiece_data_fn: "sp_100000.model"
+vocab_size: 100000
 stopwords_data_fn: "stopwords.txt"
 topic_models:
   - name: "topic_500"
     root: "topic_500"
+    alpha: 0.0005
+    beta: 0.01
   - name: "topic_1000"
     root: "topic_1000"
+    alpha: 0.001
+    beta: 0.01
