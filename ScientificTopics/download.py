@@ -45,6 +45,10 @@ def download_model(metadata_url=default_model_url):
     model_home = os.path.join(data_dir, metadata['model_name'])
     if os.path.exists(os.path.join(model_home, 'downloaded')):
         return
+    try:
+        os.mkdir(model_home)
+    except FileExistsError:
+        pass
 
     with open(os.path.join(model_home, 'meta.json'), 'w') as f:
         json.dump(metadata, f)
@@ -64,6 +68,10 @@ def download_model(metadata_url=default_model_url):
 def load_model(model_name=default_model_name, topic_model=0):
     data_dir = _data_dir()
     model_home = os.path.join(data_dir, model_name)
+    if not os.path.exists(os.path.join(model_home, 'downloaded')):
+        raise FileNotFoundError('No model found at %s, did you use '
+                                '"python -m ScientificTopics.download"?' % model_home)
+
     with open(os.path.join(model_home, 'meta.json')) as f:
         metadata = json.load(f)
 
@@ -81,3 +89,6 @@ def load_model(model_name=default_model_name, topic_model=0):
     return LDAInfer(
         topic_model_root, punkt_model=punkt_file, spm_model=spm_file, stopwords=stopwords,
         beta=topic_model['beta'], alpha=topic_model['alpha'], num_vocab=metadata['vocab_size'])
+
+if __name__ == '__main__':
+    download_model()
