@@ -8,8 +8,8 @@ from collections import Counter
 
 from tqdm import tqdm
 import sentencepiece
+
 from ScientificTopics.efficient_punkt import PunktSentenceTokenizer, PunktTrainer, PunktLanguageVars
-from synthesis_project_ceder.database import SynPro
 
 
 class LangVarsForScientificArticles(PunktLanguageVars):
@@ -38,10 +38,12 @@ class Tokenizer(object):
         else:
             f = open(punkt_params, 'rb')
 
+        logging.info('Loading punkt parameters...')
         punkt_params = pickle.load(f)
         self.sentence_tokenizer = PunktSentenceTokenizer(punkt_params)
         f.close()
 
+        logging.info('Loading sentence piece model...')
         self.spm_tokenizer = sentencepiece.SentencePieceProcessor()
         self.spm_tokenizer.Load(spm_params)
 
@@ -82,6 +84,8 @@ def get_text_file_or_xz(filename):
 
 
 def get_random_paragraphs(n, output):
+    from synthesis_project_ceder.database import SynPro
+
     synpro = SynPro()
     paragraphs_collection = synpro.Paragraphs
     random_paragraphs = paragraphs_collection.aggregate([

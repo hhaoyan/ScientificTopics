@@ -5,8 +5,6 @@ import sys
 import requests
 import yaml
 
-from ScientificTopics import LDAInfer
-
 default_model_url = 'https://github.com/hhaoyan/ScientificTopics/' \
                     'raw/master/data_20190830/default_model.yaml'
 default_model_name = 'data_20190830'
@@ -65,7 +63,7 @@ def download_model(metadata_url=default_model_url):
         f.write('downloaded')
 
 
-def load_model(model_name=default_model_name, topic_model=0):
+def _get_default_model(model_name=default_model_name, topic_model=0):
     data_dir = _data_dir()
     model_home = os.path.join(data_dir, model_name)
     if not os.path.exists(os.path.join(model_home, 'downloaded')):
@@ -85,10 +83,18 @@ def load_model(model_name=default_model_name, topic_model=0):
     punkt_file = os.path.join(model_home, metadata['punkt_data_fn'])
     spm_file = os.path.join(model_home, metadata['sentencepiece_data_fn'])
     stopwords = os.path.join(model_home, metadata['stopwords_data_fn'])
-    topic_model_root = os.path.join(model_home, topic_model['root'])
-    return LDAInfer(
-        topic_model_root, punkt_model=punkt_file, spm_model=spm_file, stopwords=stopwords,
-        beta=topic_model['beta'], alpha=topic_model['alpha'], num_vocab=metadata['vocab_size'])
+    lda_result_dir = os.path.join(model_home, topic_model['root'])
+
+    return {
+        'punkt_model': punkt_file,
+        'spm_model': spm_file,
+        'stopwords': stopwords,
+        'lda_result_dir': lda_result_dir,
+        'alpha': topic_model['alpha'],
+        'beta': topic_model['beta'],
+        'num_vocab': metadata['vocab_size'],
+    }
+
 
 if __name__ == '__main__':
     download_model()

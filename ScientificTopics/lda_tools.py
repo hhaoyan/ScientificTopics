@@ -11,6 +11,8 @@ from collections import Counter
 from functools import lru_cache
 from math import ceil
 
+from ScientificTopics.download import default_model_name, _get_default_model
+
 try:
     import matplotlib.pyplot as plt
 except ImportError:
@@ -66,8 +68,10 @@ class LDAInfer(object):
         if self.num_vocab is not None:
             self._betasum = self.beta * self.num_vocab
 
+        logging.info("Loading tokenizer...")
         self.tokenizer = Tokenizer(punkt_model, spm_model)
         self.spm_tokenizer = self.tokenizer.spm_tokenizer
+        logging.info("Loading stopwords...")
         with open(stopwords, encoding='utf8') as f:
             self.stopwords = [x.strip().split()[0] for x in f if x.strip()]
         self.stopwords = set(self.spm_tokenizer.PieceToId(x) for x in self.stopwords)
@@ -125,7 +129,7 @@ class LDAInfer(object):
         token_ids_all = self.tokenizer.tokenize_ids(text)
         valid_tokens = []
         for sentence in token_ids_all:
-            sentence = [x for x in sentence if x not in self.stopwords and filter_stopwords]
+            sentence = [x for x in sentence if x not in self.stopwords or not filter_stopwords]
             valid_tokens.append(sentence)
         return valid_tokens
 
@@ -144,7 +148,7 @@ class LDAInfer(object):
 
         return token_ids_all
 
-    def generate_html(self, tokens, doc_topics, monte_carlo_states, doc_topics_states):
+    def generate_html(self, original_tokens, doc_topics, monte_carlo_states, doc_topics_states):
         html_template_filename = os.path.join(
             os.path.dirname(os.path.realpath(__file__)),
             'plot.template.html'
@@ -158,7 +162,7 @@ class LDAInfer(object):
             'top_words': top_words,
             'states': monte_carlo_states.tolist(),
             'n_tw': doc_topics_states.tolist(),
-            'tokens': [(not_stop, self.spm_tokenizer.IdToPiece(x)) for not_stop, x in tokens]
+            'tokens': [(x not in self.stopwords, self.spm_tokenizer.IdToPiece(x)) for x in original_tokens]
         }).encode())).decode()
         return html_template.replace('{{data_base64}}', data_base64)
 
@@ -186,7 +190,7 @@ class LDAInfer(object):
 
         if plot_mc_states:
             for i in range(self.ntopics):
-                t_arr = monte_carlo_states[i]
+                t_arr = doc_topics_states[:, i]
                 if numpy.sum(t_arr) > iterations:
                     plt.plot(list(range(iterations)), t_arr, linewidth=1, label='Topic %d' % i)
             plt.legend()
@@ -287,7 +291,7 @@ class LDAInfer(object):
 
         if plot_mc_states:
             for i in range(self.ntopics):
-                t_arr = monte_carlo_states[i]
+                t_arr = doc_topics_states[:, i]
                 if numpy.sum(t_arr) > iterations:
                     plt.plot(list(range(iterations)), t_arr, linewidth=1, label='Topic %d' % i)
             plt.legend()
@@ -409,6 +413,11 @@ class LDAInfer(object):
         return n_t, n_tw
 
 
+def load_model(model_name=default_model_name, topic_model=0):
+    params = _get_default_model(model_name, topic_model)
+    return LDAInfer(**params)
+
+
 def gen_blocks(input_file, nodes, block_size, dump_binary):
     logging.info('Scanning input file...')
 
@@ -484,7 +493,7 @@ def infer(input_dir,
     inferer = LDAInfer(input_dir, punkt_model=params, spm_model=spm_model, stopwords=stopwords,
                        beta=beta, alpha=alpha, num_vocab=num_vocab)
 
-    top_words = [x[1] for x in sorted(inferer.get_top_words().items(), key=lambda x: x[0])]
+    # top_words = [x[1] for x in sorted(inferer.get_top_words().items(), key=lambda x: x[0])]
     # inferer.find_possible_stopwords()
 
     with open(infer_input, encoding='utf8') as input_file, open(infer_output, 'w') as output_file:
@@ -495,26 +504,15 @@ def infer(input_dir,
                 continue
 
             logging.info('Tokenizing paragraph.')
-            token_ids_all = inferer.tokenizer.tokenize_ids(line)
-            token_ids_all = sum(token_ids_all, [])
-            token_ids_all = [(x not in inferer.stopwords, x) for x in token_ids_all]
-
-            token_ids = [x for not_stop, x in token_ids_all if not_stop]
+            token_ids_all = inferer.tokenize_paragraph(line, filter_stopwords=False)
+            token_ids_stop = inferer.tokenize_paragraph(line, filter_stopwords=True)
 
             logging.info('Inferring paragraph.')
-            topics, mc_states, n_tw_states = inferer.infer_topic_fast(token_ids)
+            topics, mc_states, n_tw_states = inferer.infer_topic_fast(token_ids_stop)
 
             if generate_html:
-                with open('plot.template.html') as f:
-                    html_template = f.read()
                 with open('plot.%d.html' % i, 'w', encoding='utf8') as f:
-                    data_base64 = base64.b64encode(zlib.compress(json.dumps({
-                        'top_words': top_words,
-                        'states': mc_states.tolist(),
-                        'n_tw': n_tw_states.tolist(),
-                        'tokens': [(not_stop, inferer.spm_tokenizer.IdToPiece(x)) for not_stop, x in token_ids_all]
-                    }).encode())).decode()
-                    f.write(html_template.replace('{{data_base64}}', data_base64))
+                    f.write(inferer.generate_html(token_ids_all, topics, mc_states, n_tw_states))
 
             topic_count = Counter(topics)
             builder = []
@@ -523,7 +521,7 @@ def infer(input_dir,
             output_file.write(' '.join(builder))
             output_file.write('\n')
             logging.info('Inferred %d tokens: %s',
-                         len(token_ids), ' '.join('%d:%d' % x for x in Counter(token_ids).items()))
+                         len(token_ids_stop), ' '.join('%d:%d' % x for x in Counter(token_ids_stop).items()))
 
 
 def main():
@@ -550,23 +548,35 @@ def main():
                                    help='SPM model file')
 
     infer_arguments = subparsers.add_parser("infer", help='Infer LDA topics.')
-    infer_arguments.add_argument('--lda-result-dir', action='store', type=str, required=True,
+    default_model = {}
+    try:
+        default_model = _get_default_model()
+    except FileNotFoundError:
+        pass
+    infer_arguments.add_argument('--lda-result-dir', action='store', type=str,
+                                 default=default_model['lda_result_dir'],
                                  help='LDA result dir')
     infer_arguments.add_argument('--input', action='store', type=str, required=True,
                                  help='Paragraphs to infer')
     infer_arguments.add_argument('--output', action='store', type=str, required=True,
                                  help='Inference output')
-    infer_arguments.add_argument('--params', action='store', type=str, required=True,
+    infer_arguments.add_argument('--params', action='store', type=str,
+                                 default=default_model['punkt_model'],
                                  help='Punkt parameters')
-    infer_arguments.add_argument('--spm', action='store', type=str, required=True,
+    infer_arguments.add_argument('--spm', action='store', type=str,
+                                 default=default_model['spm_model'],
                                  help='SPM model file')
-    infer_arguments.add_argument('--stopwords', action='store', type=str, required=True,
+    infer_arguments.add_argument('--stopwords', action='store', type=str,
+                                 default=default_model['stopwords'],
                                  help='List of stopwords')
-    infer_arguments.add_argument('--num-vocabs', action='store', type=int, required=True,
+    infer_arguments.add_argument('--num-vocabs', action='store', type=int,
+                                 default=default_model['num_vocab'],
                                  help='Number of vocabulary')
-    infer_arguments.add_argument('--alpha', action='store', type=float, default=0.001,
+    infer_arguments.add_argument('--alpha', action='store', type=float,
+                                 default=default_model['alpha'],
                                  help='Topics prior')
-    infer_arguments.add_argument('--beta', action='store', type=float, default=0.01,
+    infer_arguments.add_argument('--beta', action='store', type=float,
+                                 default=default_model['beta'],
                                  help='Words prior')
     infer_arguments.add_argument('--generate-html', action='store_true', default=False,
                                  help='Generate HTML visualizations')
