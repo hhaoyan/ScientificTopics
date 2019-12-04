@@ -28,9 +28,35 @@ from ScientificTopics import lda_infer
 
 
 class LDAInfer(object):
+    """
+    LDAInfer is a class that reads LDA models and infer topics for new documents.
+    To use LDAInfer, four model files are required:
+
+    1. Punkt parameter file, for segmenting paragraphs into sentences.
+    2. SentencePieceModel file, for tokenizing sentences.
+    3. Stopwords file.
+    4. LDA result directory, for collecting LDA doc-topic/topic-word tables.
+
+    Two methods, tokenize_sentences() and tokenize_paragraph() are used to
+    tokenize text into tokens and convert into vocabulary ids.
+
+    Two methods, infer_topic_fast() and infer_topic() are used to infer topics
+    for list of token ids representing a document.
+    """
     def __init__(self, lda_result_dir,
                  punkt_model, stopwords, spm_model,
                  beta=0.01, alpha=0.1, num_vocab=None):
+        """
+        Initialize a LDAInfer class to infer topics for new documents.
+
+        :param lda_result_dir: Directory containing tables of a LDA model.
+        :param punkt_model: Filename of Punkt model.
+        :param stopwords: Filename of stopwords list.
+        :param spm_model: Filename of SentencePiece model.
+        :param beta: Beta of LDA model.
+        :param alpha: Alpha of LDA model.
+        :param num_vocab: Number of vocabularies.
+        """
         self.lda_result_dir = lda_result_dir
         self.beta = beta
         self.alpha = alpha
@@ -50,6 +76,9 @@ class LDAInfer(object):
 
     @property
     def ntopics(self):
+        """
+        Return number of topics.
+        """
         return self._ntopics
 
     @lru_cache(maxsize=1000)
@@ -115,7 +144,40 @@ class LDAInfer(object):
 
         return token_ids_all
 
+    def generate_html(self, tokens, doc_topics, monte_carlo_states, doc_topics_states):
+        html_template_filename = os.path.join(
+            os.path.dirname(os.path.realpath(__file__)),
+            'plot.template.html'
+        )
+        with open(html_template_filename) as f:
+            html_template = f.read()
+
+        top_words = [x[1] for x in sorted(self.get_top_words().items(), key=lambda x: x[0])]
+
+        data_base64 = base64.b64encode(zlib.compress(json.dumps({
+            'top_words': top_words,
+            'states': monte_carlo_states.tolist(),
+            'n_tw': doc_topics_states.tolist(),
+            'tokens': [(not_stop, self.spm_tokenizer.IdToPiece(x)) for not_stop, x in tokens]
+        }).encode())).decode()
+        return html_template.replace('{{data_base64}}', data_base64)
+
     def infer_topic_fast(self, doc, iterations=1000, mh_steps=2, plot_mc_states=False):
+        """
+        Infer topics for a new document. This method uses Cython implementation so it is
+        relatively faster than infer_topic().
+
+        Upon finishing, three objects will be returned:
+        1. Topic assignments for each word.
+        2. Topic assignments of each iteration of the entire Monte-Carlo process.
+        3. Number of topic assignments of each iteration.
+
+        :param doc: List of tokens representing a document.
+        :param iterations: Number of Monte-Carlo iterations.
+        :param mh_steps: Number of Metropolis-Hastings steps for each iteration.
+        :param plot_mc_states: Whether to plot the MC states of all iterations.
+        :return:
+        """
         doc_topics, monte_carlo_states, doc_topics_states = lda_infer.infer_topic(
             numpy.asarray(doc, dtype=numpy.uint32),
             self.n_t, self.n_tw,
@@ -133,6 +195,21 @@ class LDAInfer(object):
         return doc_topics, monte_carlo_states, doc_topics_states
 
     def infer_topic(self, doc, iterations=1000, mh_steps=2, plot_mc_states=False):
+        """
+        Infer topics for a new document. This method uses Cython implementation so it is
+        relatively faster than infer_topic().
+
+        Upon finishing, three objects will be returned:
+        1. Topic assignments for each word.
+        2. Topic assignments of each iteration of the entire Monte-Carlo process.
+        3. Number of topic assignments of each iteration.
+
+        :param doc: List of tokens representing a document.
+        :param iterations: Number of Monte-Carlo iterations.
+        :param mh_steps: Number of Metropolis-Hastings steps for each iteration.
+        :param plot_mc_states: Whether to plot the MC states of all iterations.
+        :return:
+        """
         doc_topics = numpy.random.choice(self.ntopics, size=(len(doc),))
         topic_counter = numpy.zeros((self.ntopics,), dtype=numpy.int)
         for t, c in Counter(doc_topics).items():
@@ -250,6 +327,9 @@ class LDAInfer(object):
                 logging.info('Possible stopword: %s in %d topics', word, count)
 
     def _read_model_parameters_try_cache(self):
+        """
+        Read cached LDA model tables n_tw and n_t.
+        """
         cache_filename = os.path.join(self.lda_result_dir, 'cached_parameters.npz')
 
         if not os.path.exists(cache_filename):
@@ -275,6 +355,9 @@ class LDAInfer(object):
         return n_t, n_tw
 
     def _read_model_parameters(self):
+        """
+        Read LDA model tables n_tw and n_t.
+        """
         try:
             return self._read_model_parameters_try_cache()
         except FileNotFoundError:
