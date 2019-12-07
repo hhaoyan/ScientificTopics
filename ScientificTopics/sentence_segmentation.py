@@ -343,15 +343,15 @@ def do_tokenize(punkt_params, spm_params,
                 logging.warning('Found an empty line at line %d', i)
                 continue
 
-            for is_filtered, token_ids, token_id_s, bow_string in results:
+            for j, (is_filtered, token_ids, token_id_s, bow_string) in enumerate(results):
                 if is_filtered:
-                    logging.info('Skipping a output item at line %d', i)
+                    logging.debug('Skipping a output item at line %d', i)
                     continue
 
                 total_docs += 1
                 output_f.write(token_id_s)
                 output_f.write('\n')
-                output_f_libsvm.write('%d\t%s\n' % (i, bow_string))
+                output_f_libsvm.write('%d,%d\t%s\n' % (i, j, bow_string))
 
             coverage_data += _coverage
             vocab_tf += _vocab_tf
