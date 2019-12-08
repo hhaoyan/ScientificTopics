@@ -2,6 +2,7 @@ import argparse
 import json
 import logging
 import lzma
+import multiprocessing
 import pickle
 import re
 from collections import Counter
@@ -265,10 +266,51 @@ def segment_text_file(params, input_file, output_file, bulk):
     input_f.close()
 
 
+def _tokenize(args):
+    """Returns is_not_empty, tuple((is_filtered, tokens, token_id_s, bow_s))"""
+    line, min_words, produce_sentences = args
+
+    global tokenizer, g_stopwords
+    tokens = tokenizer.tokenize_ids(line)
+
+    if not any(len(x) for x in tokens):
+        return False, (), None, None
+
+    if not produce_sentences:
+        tokens = [sum(tokens, [])]
+
+    results = []
+    coverage_data = Counter()
+    vocab_tf = Counter()
+    for token_ids_org in tokens:
+        token_ids = [x for x in token_ids_org if x not in g_stopwords]
+
+        if len(token_ids) < min_words:
+            results.append((True, (), None, None))
+            continue
+
+        for t in set(token_ids):
+            coverage_data[t] += 1
+
+        token_id_s = ' '.join(str(x) for x in token_ids)
+
+        bow = Counter(token_ids)
+        bow_string = ['%d:%d' % x for x in bow.items()]
+        bow_string = ' '.join(bow_string)
+
+        results.append((False, token_ids, token_id_s, bow_string))
+
+        for token, count in bow.items():
+            vocab_tf[token] += count
+
+    return True, results, coverage_data, vocab_tf
+
+
 def do_tokenize(punkt_params, spm_params,
                 input_filename, output_filename,
                 produce_sentences=False, coverage_report=None,
-                min_words=0, stopwords=None):
+                min_words=0, stopwords=None, n_cpus=None):
+    global tokenizer, g_stopwords
     tokenizer = Tokenizer(punkt_params, spm_params)
     input_f = get_text_file_or_xz(input_filename)
 
@@ -284,46 +326,40 @@ def do_tokenize(punkt_params, spm_params,
         stopwords = set(tokenizer.spm_tokenizer.PieceToId(x) for x in stopwords)
         stopwords = set(x for x in stopwords if not tokenizer.spm_tokenizer.IsUnknown(x))
 
+    g_stopwords = stopwords
+
     output_f = open(output_filename + '.sequence', 'w')
     output_f_libsvm = open(output_filename + '.lightlda.libsvm', 'w')
     output_f_vocab = open(output_filename + '.lightlda.vocab', 'w', encoding='utf8')
 
     # Write documents
-    for i, line in enumerate(input_f):
-        if not line.strip():
-            logging.warning('Found an empty line at line %d', i)
-            continue
-        tokens = tokenizer.tokenize_ids(line)
-
-        if not produce_sentences:
-            tokens = [sum(tokens, [])]
-
-        for token_ids_org in tokens:
-            token_ids = [x for x in token_ids_org if x not in stopwords]
-
-            if len(token_ids) < min_words:
-                if len(token_ids_org) >= min_words:
-                    logging.info('Skipping a output item (due to stopwords) at line %d', i)
-                else:
-                    logging.info('Skipping a output item at line %d', i)
+    with multiprocessing.Pool(processes=n_cpus) as pool:
+        for i, (is_not_empty, results, _coverage, _vocab_tf) in enumerate(
+                pool.imap(
+                    _tokenize,
+                    ((x, min_words, produce_sentences) for x in input_f),
+                    chunksize=1000)):
+            if not is_not_empty:
+                logging.warning('Found an empty line at line %d', i)
                 continue
 
-            for t in set(token_ids):
-                coverage_data[t] += 1
-            total_docs += 1
+            for j, (is_filtered, token_ids, token_id_s, bow_string) in enumerate(results):
+                if is_filtered:
+                    logging.debug('Skipping a output item at line %d', i)
+                    continue
 
-            output_f.write(' '.join(str(x) for x in token_ids))
-            output_f.write('\n')
+                total_docs += 1
+                output_f.write(token_id_s)
+                output_f.write('\n')
+                output_f_libsvm.write('%d,%d\t%s\n' % (i, j, bow_string))
 
-            bow = Counter(token_ids)
-            bow_string = ['%d:%d' % x for x in bow.items()]
-            output_f_libsvm.write('%d\t%s\n' % (i, ' '.join(bow_string)))
+            for n, m in _coverage.items():
+                coverage_data[n] += m
+            for n, m in _vocab_tf.items():
+                vocab_tf[n] += m
 
-            for token, count in bow.items():
-                vocab_tf[token] += count
-
-        if (i + 1) % 10000 == 0:
-            logging.info('Processed %d lines', i + 1)
+            if (i + 1) % 10000 == 0:
+                logging.info('Processed %d lines', i + 1)
 
     output_f.close()
     output_f_libsvm.close()
@@ -420,6 +456,8 @@ def main():
                            help='Produce sentences per line instead of paragraphs')
     tokenizer.add_argument('--coverage-report', action='store', type=str, default=None,
                            help='Token coverage report filename')
+    tokenizer.add_argument('--n-cpus', action='store', type=int, default=multiprocessing.cpu_count(),
+                           help='Processes to fork')
 
     tokenizer_interact = subparsers.add_parser("tokenize-interact", help="Tokenize paragraphs via interaction.")
     tokenizer_interact.add_argument('--punkt', action='store', type=str, required=True,
@@ -451,7 +489,7 @@ def main():
     elif args.action == 'tokenize':
         do_tokenize(args.punkt, args.spm, args.input, args.output,
                     args.produce_sentences, args.coverage_report,
-                    args.min_words, args.stopwords)
+                    args.min_words, args.stopwords, args.n_cpus)
     elif args.action == 'tokenize-interact':
         do_tokenize_interact(args.punkt, args.spm)
     else:
