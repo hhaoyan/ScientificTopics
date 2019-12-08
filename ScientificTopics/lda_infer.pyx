@@ -4,6 +4,7 @@ cimport numpy
 cimport cython
 
 ctypedef numpy.float32_t FLOAT_T
+ctypedef numpy.float64_t FLOAT64_T
 ctypedef numpy.int32_t INT32_T
 ctypedef numpy.uint32_t UINT32_T
 
@@ -63,7 +64,7 @@ def infer_topic(
     cdef UINT32_T num_vocab = n_tw.shape[1]
     cdef UINT32_T doc_size = doc.shape[0]
     cdef float betasum = beta * num_vocab
-    cdef UINT32_T i, j, k
+    cdef UINT32_T i, j, k, l
 
     cdef numpy.ndarray[UINT32_T, ndim=1] doc_topics = numpy.random.choice(ntopics, size=(doc_size,)).astype(numpy.uint32)
     cdef numpy.ndarray[UINT32_T, ndim=1] topic_counter = numpy.zeros((ntopics,), dtype=numpy.uint32)
@@ -75,6 +76,7 @@ def infer_topic(
 
     cdef numpy.ndarray[UINT32_T, ndim=2] monte_carlo_states = numpy.empty((iterations, doc_size), dtype=numpy.uint32)
     cdef numpy.ndarray[UINT32_T, ndim=2] doc_topics_states = numpy.empty((iterations, ntopics), dtype=numpy.uint32)
+    cdef numpy.ndarray[FLOAT64_T, ndim=1] doc_probabilities = numpy.empty((iterations,), dtype=numpy.float64)
 
     cdef numpy.ndarray[FLOAT_T, ndim=4] random_numbers = numpy.random.rand(iterations, doc_size, mh_steps, 2).astype(numpy.float32)
     cdef numpy.ndarray[UINT32_T, ndim=3] word_proposals = numpy.empty((doc_size, iterations, mh_steps), dtype=numpy.uint32)
@@ -97,6 +99,7 @@ def infer_topic(
     cdef float n_td_alpha, n_tw_beta, n_t_beta_sum, proposal_t, pi_t
     cdef float n_sd_alpha, n_sw_beta, n_s_beta_sum, proposal_s, pi_s
     cdef float pi
+    cdef double doc_prob
 
     for i in range(iterations):
         for j in range(doc_size):
@@ -164,4 +167,21 @@ def infer_topic(
 
             doc_topics[j] = topic
 
-    return doc_topics, monte_carlo_states, doc_topics_states
+        doc_prob = 1.0
+        for j in range(doc_size):
+            word_id = doc[j]
+            topic = doc_topics[j]
+
+            k = 0
+            for l in range(doc_size):
+                if word_id == doc[l] and topic == doc_topics[l]:
+                    k += 1
+
+            doc_prob *= (
+                    (topic_counter[topic] + alpha - 1) *
+                    (n_tw[topic, word_id] + beta + k - 1) /
+                    (n_t[topic] + topic_counter[topic] + betasum - 1)
+            )
+        doc_probabilities[i] = numpy.log(doc_prob)
+
+    return doc_topics, monte_carlo_states, doc_topics_states, doc_probabilities

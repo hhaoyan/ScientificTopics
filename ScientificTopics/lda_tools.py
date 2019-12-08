@@ -182,7 +182,7 @@ class LDAInfer(object):
         :param plot_mc_states: Whether to plot the MC states of all iterations.
         :return:
         """
-        doc_topics, monte_carlo_states, doc_topics_states = lda_infer.infer_topic(
+        doc_topics, monte_carlo_states, doc_topics_states, doc_probabilities = lda_infer.infer_topic(
             numpy.asarray(doc, dtype=numpy.uint32),
             self.n_t, self.n_tw,
             self.alpha, self.beta, iterations, mh_steps
@@ -196,7 +196,7 @@ class LDAInfer(object):
             plt.legend()
             plt.show()
 
-        return doc_topics, monte_carlo_states, doc_topics_states
+        return doc_topics, monte_carlo_states, doc_topics_states, doc_probabilities
 
     def infer_topic(self, doc, iterations=1000, mh_steps=2, plot_mc_states=False):
         """
