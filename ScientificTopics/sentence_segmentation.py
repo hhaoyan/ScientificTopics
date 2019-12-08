@@ -353,8 +353,10 @@ def do_tokenize(punkt_params, spm_params,
                 output_f.write('\n')
                 output_f_libsvm.write('%d,%d\t%s\n' % (i, j, bow_string))
 
-            coverage_data += _coverage
-            vocab_tf += _vocab_tf
+            for n, m in _coverage.items():
+                coverage_data[n] += m
+            for n, m in _vocab_tf.items():
+                vocab_tf[n] += m
 
             if (i + 1) % 10000 == 0:
                 logging.info('Processed %d lines', i + 1)
