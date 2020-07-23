@@ -23,7 +23,6 @@ import pyximport
 
 from ScientificTopics.sentence_segmentation import Tokenizer
 
-
 pyximport.install(
     setup_args={'include_dirs': numpy.get_include()})
 from ScientificTopics import lda_infer
@@ -45,6 +44,7 @@ class LDAInfer(object):
     Two methods, infer_topic_fast() and infer_topic() are used to infer topics
     for list of token ids representing a document.
     """
+
     def __init__(self, lda_result_dir,
                  punkt_model, stopwords, spm_model,
                  beta=0.01, alpha=0.1, num_vocab=None):
@@ -508,7 +508,7 @@ def infer(input_dir,
             token_ids_stop = inferer.tokenize_paragraph(line, filter_stopwords=True)
 
             logging.info('Inferring paragraph.')
-            topics, mc_states, n_tw_states = inferer.infer_topic_fast(token_ids_stop)
+            topics, mc_states, n_tw_states, _ = inferer.infer_topic_fast(token_ids_stop)
 
             if generate_html:
                 with open('plot.%d.html' % i, 'w', encoding='utf8') as f:
@@ -560,6 +560,8 @@ def main():
                                  help='Paragraphs to infer')
     infer_arguments.add_argument('--output', action='store', type=str, required=True,
                                  help='Inference output')
+    infer_arguments.add_argument('--model-dir', action='store', type=str, default=None,
+                                 help='Directory of the model that contains a config.json')
     infer_arguments.add_argument('--params', action='store', type=str,
                                  default=default_model['punkt_model'],
                                  help='Punkt parameters')
@@ -569,7 +571,7 @@ def main():
     infer_arguments.add_argument('--stopwords', action='store', type=str,
                                  default=default_model['stopwords'],
                                  help='List of stopwords')
-    infer_arguments.add_argument('--num-vocabs', action='store', type=int,
+    infer_arguments.add_argument('--num-vocab', action='store', type=int,
                                  default=default_model['num_vocab'],
                                  help='Number of vocabulary')
     infer_arguments.add_argument('--alpha', action='store', type=float,
@@ -595,11 +597,34 @@ def main():
     elif args.action == 'analyze':
         analyze_results(args.lda_result_dir, args.spm)
     elif args.action == 'infer':
-        infer(args.lda_result_dir,
+        if args.model_dir is not None:
+            d = os.path.realpath(args.model_dir)
+            with open(os.path.join(d, 'config.json')) as f:
+                config = json.load(f)
+                kwargs = {
+                    'input_dir': d,
+                    'params': os.path.join(d, config['params']),
+                    'spm_model': os.path.join(d, config['spm']),
+                    'stopwords': os.path.join(d, config['stopwords']),
+                    'alpha': config['alpha'],
+                    'beta': config['beta'],
+                    'num_vocab': config['num_vocab'],
+                }
+        else:
+            kwargs = {
+                'input_dir': args.lda_result_dir,
+                'params': args.params,
+                'spm_model': args.spm,
+                'stopwords': args.stopwords,
+                'alpha': args.alpha,
+                'beta': args.beta,
+                'num_vocab': args.num_vocab,
+            }
+        input_dir = kwargs.pop('input_dir')
+        infer(input_dir,
               args.input, args.output,
-              args.params, args.spm, args.stopwords,
-              args.alpha, args.beta, args.num_vocabs,
-              args.generate_html)
+              generate_html=args.generate_html,
+              **kwargs)
     else:
         parser.print_usage()
 

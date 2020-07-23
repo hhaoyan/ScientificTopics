@@ -15,7 +15,7 @@ if __name__ == '__main__':
         zip_safe=False,
         install_requires=[
             'Cython',
-            'nltk',
+            'nltk==3.4.4',
             'numpy',
             'requests',
             'sentencepiece',
